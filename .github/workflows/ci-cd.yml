@@ -1,0 +1,77 @@
+name: CI/CD
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'http://localhost:5000/api' }}
+
+  deploy:
+    name: Deploy to Vercel
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - name: Check deploy configuration
+        id: cfg
+        run: |
+          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "::warning::VERCEL_TOKEN / VERCEL_ORG_ID / VERCEL_PROJECT_ID not set - skipping deploy."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.cfg.outputs.enabled == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.cfg.outputs.enabled == 'true'
+        with:
+          node-version: 22
+      # VITE_API_URL comes from the Vercel project's environment variables (Production).
+      - name: Pull Vercel project settings
+        if: steps.cfg.outputs.enabled == 'true'
+        run: npx --yes vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
+      - name: Build
+        if: steps.cfg.outputs.enabled == 'true'
+        run: npx --yes vercel@latest build --prod --token="$VERCEL_TOKEN"
+      - name: Deploy
+        if: steps.cfg.outputs.enabled == 'true'
+        id: deploy
+        run: |
+          url=$(npx --yes vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Deployed: $url"
+      - name: Smoke test
+        if: steps.cfg.outputs.enabled == 'true'
+        run: |
+          curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "${{ steps.deploy.outputs.url }}" | grep -q '<div id="root">'
+          # SPA fallback: deep links must serve index.html, not 404
+          curl -fsS "${{ steps.deploy.outputs.url }}/notes" | grep -q '<div id="root">'
+          echo "Smoke test passed"
