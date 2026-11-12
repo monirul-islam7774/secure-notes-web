@@ -2,8 +2,8 @@
 
 Plain React (Vite) client for the Secure Notes API. No UI kits or CSS frameworks.
 
-- **Live URL:** `<LIVE_FRONTEND_URL>`
-- **Backend:** `<LIVE_API_URL>` (repo: `secure-notes-api`). The free Render instance sleeps when idle, so the first request can take 30–50 s.
+- **Live URL:** `https://secure-notes-web-seven.vercel.app`
+- **Backend:** `https://secure-notes-api-s8yy.onrender.com` (repo: https://github.com/monirul-islam7774/secure-notes-api). The free Render instance sleeps when idle, so the first request can take 30–50 s.
 
 ## Setup
 
